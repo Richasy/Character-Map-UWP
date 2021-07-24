@@ -49,6 +49,7 @@ namespace CharacterMap.ViewModels
         public IDialogService DialogService                                 { get; }
         public RelayCommand<ExportParameters> CommandSavePng                { get; }
         public RelayCommand<ExportParameters> CommandSaveSvg                { get; }
+        public RelayCommand<ExportParameters> CommandSaveEnum               { get; }
         public RelayCommand<DevProviderType>  ToggleDev                     { get; }
         public DWriteFallbackFont FallbackFont                              => FontFinder.Fallback; // Do *not* use { get;} here
         public int[] RampSizes                                              { get; } = new[] { 12, 18, 24, 48, 72, 96, 110, 134 };

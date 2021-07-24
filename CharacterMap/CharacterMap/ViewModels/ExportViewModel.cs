@@ -37,6 +37,10 @@ namespace CharacterMap.ViewModels
         public bool IsExporting             { get => GetV(false); set => Set(value); }
         public bool ShowCancelExport        { get => GetV(false); set => Set(value); }
         public int SelectedFormat           { get => GetV((int)ExportFormat.Png); set => Set(value); }
+        public string ExportClassName { get => GetV(string.Empty); set => Set(value); }
+        public string ExportNameSpace { get => GetV(string.Empty); set => Set(value); }
+        public string ExportFileName { get => GetV(string.Empty); set => Set(value); }
+        public string[] NeedRemoveStrings { get => GetV(new string[] { }); set => Set(value); }
         public string ExportMessage         { get => Get<string>(); set => Set(value); }
         public string Summary               { get => Get<string>(); private set => Set(value); }
         public string SelectedText          { get => Get<string>(); private set => Set(value); }
@@ -44,6 +48,7 @@ namespace CharacterMap.ViewModels
 
         public bool CanContinue => Characters.Count > 0;
         public bool IsPngFormat => SelectedFormat == (int)ExportFormat.Png;
+        public bool IsEnumFormat => SelectedFormat == (int)ExportFormat.Enum;
 
         #endregion
 
@@ -93,6 +98,7 @@ namespace CharacterMap.ViewModels
 
                 case nameof(SelectedFormat):
                     OnPropertyChanged(nameof(IsPngFormat));
+                    OnPropertyChanged(nameof(IsEnumFormat));
                     UpdateSummary();
                     break;
 
@@ -144,14 +150,28 @@ namespace CharacterMap.ViewModels
 
         public async void StartExport()
         {
-            ExportOptions export = new(
-                (ExportFormat)SelectedFormat, 
-                ExportColor ? ExportStyle.ColorGlyph : ExportStyle.Black) 
-            { 
-                PreferredColor = GlyphColor, 
-                PreferredSize = GlyphSize,
-                SkipEmptyGlyphs = SkipBlankGlyphs
-            };
+            ExportOptions export = null;
+            if (SelectedFormat == (int)ExportFormat.Enum)
+            {
+                export = new(
+                    (ExportFormat)SelectedFormat,
+                    ExportFileName,
+                    ExportClassName,
+                    ExportNameSpace,
+                    NeedRemoveStrings
+                    );
+            }
+            else
+            {
+                export = new(
+                (ExportFormat)SelectedFormat,
+                ExportColor ? ExportStyle.ColorGlyph : ExportStyle.Black)
+                {
+                    PreferredColor = GlyphColor,
+                    PreferredSize = GlyphSize,
+                    SkipEmptyGlyphs = SkipBlankGlyphs
+                };
+            }
 
             IsExporting = true;
 

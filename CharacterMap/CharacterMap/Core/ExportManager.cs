@@ -23,20 +23,23 @@ using System.IO.Compression;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.Toolkit.Mvvm.DependencyInjection;
 using System.Threading;
+using System.Diagnostics;
+using System.Text;
 
 namespace CharacterMap.Core
 {
     public enum ExportFormat : int
-    { 
+    {
         Png = 0,
-        Svg = 1
+        Svg = 1,
+        Enum = 2,
     }
 
     public enum ExportStyle
     {
         Black,
         White,
-        ColorGlyph
+        ColorGlyph,
     }
 
     public record ExportOptions
@@ -47,6 +50,10 @@ namespace CharacterMap.Core
         public Color PreferredColor { get; init; }
         public StorageFolder TargetFolder { get; init; }
         public bool SkipEmptyGlyphs { get; init; }
+        public string[] NeedRemoveStrings { get; init; }
+        public string ExportFileName { get; init; }
+        public string ClassName { get; init; }
+        public string Namespace { get; init; }
 
         public ExportOptions() { }
 
@@ -62,6 +69,16 @@ namespace CharacterMap.Core
             PreferredStyle = style;
         }
 
+        public ExportOptions(ExportFormat format, string exportFileName, string className, string @namespace, string[] needRemoveStrings = null)
+        {
+            PreferredSize = ResourceHelper.AppSettings.GridSize;
+            PreferredFormat = format;
+            SkipEmptyGlyphs = true;
+            NeedRemoveStrings = needRemoveStrings ?? new string[] { };
+            ExportFileName = exportFileName;
+            ClassName = className;
+            Namespace = @namespace;
+        }
     }
 
     public enum ExportState
@@ -155,12 +172,12 @@ namespace CharacterMap.Core
 
             // If COLR format (e.g. Segoe UI Emoji), we have special export path.
             // This path does not require UI thread.
-            if (style == ExportStyle.ColorGlyph 
-                && options.Analysis.HasColorGlyphs 
+            if (style == ExportStyle.ColorGlyph
+                && options.Analysis.HasColorGlyphs
                 && !options.Analysis.GlyphFormats.Contains(GlyphImageFormat.Svg))
             {
                 NativeInterop interop = Utils.GetInterop();
-                List<string> paths = new ();
+                List<string> paths = new();
                 Rect bounds = Rect.Empty;
 
                 // Try to find the bounding box of all glyph layers combined
@@ -194,7 +211,7 @@ namespace CharacterMap.Core
 
             string GetMonochrome()
             {
-                using CanvasSvgDocument document = string.IsNullOrWhiteSpace(data.Path) 
+                using CanvasSvgDocument document = string.IsNullOrWhiteSpace(data.Path)
                     ? new CanvasSvgDocument(Utils.CanvasDevice)
                     : Utils.GenerateSvgDocument(device, data.Bounds, data.Path, textColor);
                 return document.GetXml();
@@ -308,12 +325,15 @@ namespace CharacterMap.Core
             InstalledFont selectedFont,
             CharacterRenderingOptions options,
             Character selectedChar,
-            StorageFolder targetFolder = null)
+            StorageFolder targetFolder = null,
+            Dictionary<string, string> enums = null)
         {
             // To export a glyph as an SVG, it must be fully vector based.
             // If it is not, we force export as PNG regardless of choice.
             if (export.PreferredFormat == ExportFormat.Png || options.Analysis.IsFullVectorBased is false)
                 return ExportPngAsync(export, selectedFont, options, selectedChar, ResourceHelper.AppSettings, targetFolder);
+            else if (export.PreferredFormat == ExportFormat.Enum)
+                return Task.FromResult(ExportEnum(export, options, selectedChar, enums));
             else
                 // NOTE: SVG Export may require UI thread
                 return ExportSvgAsync(export, selectedFont, options, selectedChar, targetFolder);
@@ -326,6 +346,58 @@ namespace CharacterMap.Core
                 return targetFolder.CreateFileAsync(name, CreationCollisionOption.ReplaceExisting).AsTask();
             else
                 return PickFileAsync(name, format.ToUpper(), new[] { $".{format}" });
+        }
+
+        public static ExportResult ExportEnum(
+            ExportOptions style,
+            CharacterRenderingOptions options,
+            Character selectedChar,
+            Dictionary<string, string> enums = null)
+        {
+            try
+            {
+                if (enums == null)
+                {
+                    return new ExportResult(ExportState.Failed, null);
+                }
+
+                if (string.IsNullOrEmpty(selectedChar.Char) && style.SkipEmptyGlyphs)
+                    return new ExportResult(ExportState.Skipped, null);
+
+                var name = options.Variant.GetDescription(selectedChar);
+                if (style.NeedRemoveStrings != null && style.NeedRemoveStrings.Any())
+                {
+                    foreach (var replace in style.NeedRemoveStrings)
+                    {
+                        name = name.Replace(replace, string.Empty);
+                    }
+                }
+                name = name.Trim();
+                var splits = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var tempName = string.Empty;
+                for (int i = 0; i < splits.Length; i++)
+                {
+                    var sp = splits[i].ToCharArray();
+                    sp[0] = char.ToUpper(sp[0]);
+                    tempName += new string(sp);
+                }
+                name = tempName;
+                if (!enums.ContainsValue(name))
+                {
+                    enums.Add($"\\u{selectedChar.UnicodeString.Replace("U+", string.Empty)}", name);
+                    return new ExportResult(ExportState.Succeeded, null);
+                }
+                else
+                {
+                    return new ExportResult(ExportState.Skipped, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex.Message);
+            }
+
+            return new ExportResult(ExportState.Failed, null);
         }
 
         public static async Task<ExportResult> ExportSvgAsync(
@@ -426,7 +498,7 @@ namespace CharacterMap.Core
                         using (var ds = renderTarget.CreateDrawingSession())
                         {
                             ds.Clear(Colors.Transparent);
-                            
+
                             double scale = Math.Min(1, Math.Min(size / db.Width, size / db.Height));
                             var x = -db.Left + ((size - (db.Width * scale)) / 2d);
                             var y = -db.Top + ((size - (db.Height * scale)) / 2d);
@@ -548,16 +620,16 @@ namespace CharacterMap.Core
              * inside an auto-scaling viewport. So render-size is *largely* pointless */
 
             using var layout = CreateLayout(options, selectedChar, ExportStyle.ColorGlyph, options.FontSize);
-            layout.Options = options.Analysis.GlyphFormats.Contains(GlyphImageFormat.Svg) 
-                ? CanvasDrawTextOptions.EnableColorFont 
+            layout.Options = options.Analysis.GlyphFormats.Contains(GlyphImageFormat.Svg)
+                ? CanvasDrawTextOptions.EnableColorFont
                 : CanvasDrawTextOptions.Default;
-            
+
             return CanvasGeometry.CreateText(layout);
         }
 
         private static IAsyncOperation<StorageFolder> PickFolderAsync()
         {
-            FolderPicker picker = new ()
+            FolderPicker picker = new()
             {
                 SuggestedStartLocation = PickerLocationId.DocumentsLibrary
             };
@@ -566,9 +638,39 @@ namespace CharacterMap.Core
             return picker.PickSingleFolderAsync();
         }
 
+        private static async Task WriteEnumToFile(Dictionary<string, string> enums, StorageFolder folder, ExportOptions opts)
+        {
+            var file = await folder.CreateFileAsync(
+                        opts.ExportFileName.Replace(".cs", string.Empty, StringComparison.OrdinalIgnoreCase) + ".cs",
+                        CreationCollisionOption.ReplaceExisting);
+            var builder = new StringBuilder();
+            /*
+             * namespace CharacterMap.Core
+               {
+                   public enum ExportFormat
+                   {
+                       Png = 0,
+                       Svg = 1,
+                       Enum = 2,
+                   }
+               }
+            */
+            builder.AppendLine($"namespace {opts.Namespace}");
+            builder.AppendLine("{");
+            builder.AppendLine($"{new string(' ', 4)}public enum {opts.ClassName}");
+            builder.AppendLine($"{new string(' ', 4)}{{");
+            foreach (var item in enums)
+            {
+                builder.AppendLine($"{new string(' ', 8)}{item.Value} = \'{item.Key}\',");
+            }
+            builder.AppendLine($"{new string(' ', 4)}}}");
+            builder.AppendLine("}");
+            await FileIO.WriteTextAsync(file, builder.ToString());
+        }
+
         internal static async Task<ExportGlyphsResult> ExportGlyphsToFolderAsync(
-            InstalledFont family, 
-            CharacterRenderingOptions options, 
+            InstalledFont family,
+            CharacterRenderingOptions options,
             IReadOnlyList<Character> characters,
             ExportOptions opts,
             Action<int, int> callback,
@@ -578,6 +680,7 @@ namespace CharacterMap.Core
             {
                 List<ExportResult> fails = new();
                 List<ExportResult> skips = new();
+                Dictionary<string, string> enums = new();
                 NativeInterop interop = Utils.GetInterop();
 
                 // TODO: Parallelise this to improve export speed
@@ -599,7 +702,7 @@ namespace CharacterMap.Core
                     options = options with { Analysis = interop.AnalyzeCharacterLayout(layout) };
 
                     // Export the glyph
-                    ExportResult result = await ExportGlyphAsync(opts, family, options, c, folder);
+                    ExportResult result = await ExportGlyphAsync(opts, family, options, c, folder, enums);
                     if (result is not null)
                     {
                         if (result.State == ExportState.Failed)
@@ -607,6 +710,11 @@ namespace CharacterMap.Core
                         else if (result.State == ExportState.Skipped)
                             skips.Add(result);
                     }
+                }
+
+                if (opts.PreferredFormat == ExportFormat.Enum)
+                {
+                    await WriteEnumToFile(enums, folder, opts);
                 }
 
                 return new ExportGlyphsResult(

@@ -114,5 +114,12 @@ namespace CharacterMap.Views
         {
             ViewModel.UpdateCategories(e);
         }
+
+        private void OnRemoveStringTextBoxChanged(object sender, TextChangedEventArgs e)
+        {
+            var text = (sender as TextBox).Text;
+            var sp = text.Split(',');
+            ViewModel.NeedRemoveStrings = sp;
+        }
     }
 }

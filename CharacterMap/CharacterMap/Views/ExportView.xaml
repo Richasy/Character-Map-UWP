@@ -647,6 +647,7 @@
                             SelectedIndex="{x:Bind ViewModel.SelectedFormat, Mode=TwoWay}">
                             <ComboBoxItem Content="PNG" />
                             <ComboBoxItem Content="SVG" />
+                            <ComboBoxItem Content="ENUM" />
                         </ComboBox>
 
                         <StackPanel Visibility="{x:Bind ViewModel.IsPngFormat, Mode=OneWay}">
@@ -669,6 +670,28 @@
                                 <Run Text="x" />
                                 <Run Text="{x:Bind SldResolution.Value, Mode=OneWay}" />
                             </TextBlock>
+                        </StackPanel>
+
+                        <StackPanel
+                            Margin="0,20,0,0"
+                            Spacing="12"
+                            Visibility="{x:Bind ViewModel.IsEnumFormat, Mode=OneWay}">
+                            <TextBox
+                                HorizontalAlignment="Stretch"
+                                Header="文件名"
+                                Text="{x:Bind ViewModel.ExportFileName, Mode=TwoWay}" />
+                            <TextBox
+                                HorizontalAlignment="Stretch"
+                                Header="命名空间"
+                                Text="{x:Bind ViewModel.ExportNameSpace, Mode=TwoWay}" />
+                            <TextBox
+                                HorizontalAlignment="Stretch"
+                                Header="类名"
+                                Text="{x:Bind ViewModel.ExportClassName, Mode=TwoWay}" />
+                            <TextBox
+                                HorizontalAlignment="Stretch"
+                                Header="需要移除的文本（用半角逗号分割）"
+                                TextChanged="OnRemoveStringTextBoxChanged" />
                         </StackPanel>
 
                         <Border Style="{StaticResource SpacerStyle}" />
